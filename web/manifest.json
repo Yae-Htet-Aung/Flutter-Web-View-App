@@ -1,6 +1,6 @@
 {
-    "name": "shwe_yoke_lay_express",
-    "short_name": "shwe_yoke_lay_express",
+    "name": "shwe_yoke_lay_admin",
+    "short_name": "shwe_yoke_lay_admin",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

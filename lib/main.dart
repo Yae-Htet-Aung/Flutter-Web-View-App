@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:blue_thermal_printer/blue_thermal_printer.dart';
@@ -39,45 +40,53 @@ class _WebViewScreenState extends State<WebViewScreen> {
       ..addJavaScriptChannel(
         'PrinterChannel',
         onMessageReceived: (JavaScriptMessage message) async {
-          try {
-            final base64Str = message.message;
-            final bytes = base64Decode(base64Str);
-
-            final connected = await _printer.isConnected;
-            if (connected == true) {
-              _printer.printImageBytes(bytes);
-              _printer.printNewLine();
-              _printer.paperCut();
-              debugPrint("✅ Ticket printed successfully");
-            } else {
-              debugPrint("❌ Printer not connected");
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Printer not connected")),
-                );
-              }
-            }
-          } catch (e) {
-            debugPrint("⚠️ Failed to print ticket: $e");
-          }
+          debugPrint("📩 Received message from webview");
+          await _handlePrint(message.message);
         },
       )
-      ..loadRequest(Uri.parse('https://shweyokelayexpress.com/'));
+      ..loadRequest(Uri.parse('https://admin.shweyokelayexpress.com/'));
   }
 
-  Future<void> _selectPrinter() async {
+  Future<void> _handlePrint(String base64Str) async {
+    debugPrint("🖨️ _handlePrint called");
     try {
-      final devices = await _printer.getBondedDevices();
-      if (devices.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("No paired printers found")),
-          );
-        }
+      final connected = await _printer.isConnected;
+      debugPrint("🔌 Printer connected? $connected");
+      if (connected != true) {
+        _showSnack("❌ Printer not connected");
         return;
       }
 
-      // Show dialog with list of paired printers
+      Uint8List? bytes;
+      try {
+        bytes = base64Decode(base64Str);
+        debugPrint("✅ Base64 decoded, ${bytes.length} bytes");
+      } catch (e) {
+        debugPrint("⚠️ Invalid base64 string: $e");
+        _showSnack("Invalid print data");
+        return;
+      }
+
+      await _printer.printImageBytes(bytes);
+      await _printer.printNewLine();
+      debugPrint("✅ Ticket printed successfully");
+    } catch (e) {
+      debugPrint("⚠️ Failed to print ticket: $e");
+      _showSnack("Print failed: $e");
+    }
+  }
+
+  Future<void> _selectPrinter() async {
+    debugPrint("🖨️ _selectPrinter called");
+    try {
+      final devices = await _printer.getBondedDevices();
+      debugPrint("📡 Found ${devices.length} bonded devices");
+
+      if (devices.isEmpty) {
+        _showSnack("No paired printers found");
+        return;
+      }
+
       final selected = await showDialog<BluetoothDevice>(
         context: context,
         builder: (context) {
@@ -93,7 +102,10 @@ class _WebViewScreenState extends State<WebViewScreen> {
                   return ListTile(
                     title: Text(d.name ?? "Unknown"),
                     subtitle: Text(d.address ?? ""),
-                    onTap: () => Navigator.pop(context, d),
+                    onTap: () {
+                      debugPrint("📌 Selected printer: ${d.name}");
+                      Navigator.pop(context, d);
+                    },
                   );
                 },
               ),
@@ -103,23 +115,26 @@ class _WebViewScreenState extends State<WebViewScreen> {
       );
 
       if (selected != null) {
+        debugPrint("🔌 Connecting to printer ${selected.name}");
         await _printer.connect(selected);
         final connected = await _printer.isConnected;
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                connected == true
-                    ? "✅ Connected to ${selected.name}"
-                    : "❌ Failed to connect",
-              ),
-            ),
-          );
-        }
+        debugPrint("🔌 Connection status: $connected");
+        _showSnack(
+          connected == true
+              ? "✅ Connected to ${selected.name}"
+              : "❌ Failed to connect",
+        );
       }
     } catch (e) {
       debugPrint("⚠️ Error selecting printer: $e");
+      _showSnack("Printer error: $e");
     }
+  }
+
+  void _showSnack(String msg) {
+    debugPrint("💬 Snack: $msg");
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   @override
@@ -128,11 +143,15 @@ class _WebViewScreenState extends State<WebViewScreen> {
       child: Scaffold(
         backgroundColor: Colors.white,
         appBar: AppBar(
-          title: const Text("Ticket Printer"),
+          automaticallyImplyLeading: false, // no back button
+          title: null, // removed title
           actions: [
             IconButton(
               icon: const Icon(Icons.print),
-              onPressed: _selectPrinter, // open printer picker
+              onPressed: () {
+                debugPrint("🖱️ Print icon pressed");
+                _selectPrinter();
+              },
             ),
           ],
         ),
